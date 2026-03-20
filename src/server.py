@@ -25,7 +25,11 @@ from src.client import (
 # Server
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP("todoist_mcp")
+mcp = FastMCP(
+    "todoist_mcp",
+    host=os.environ.get("MCP_HOST", "0.0.0.0"),
+    port=int(os.environ.get("MCP_PORT", "8000")),
+)
 
 # ---------------------------------------------------------------------------
 # Shared enums / models
@@ -707,10 +711,8 @@ async def todoist_delete_label(params: TodoistDeleteLabelInput) -> str:
 # ===========================================================================
 
 if __name__ == "__main__":
-    import sys
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "streamable_http":
-        port = int(os.environ.get("MCP_PORT", "8000"))
-        mcp.run(transport="streamable_http", port=port)
+        mcp.run(transport="streamable-http")
     else:
         mcp.run()
