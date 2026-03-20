@@ -31,6 +31,11 @@ mcp = FastMCP(
     port=int(os.environ.get("MCP_PORT", "8000")),
 )
 
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request):
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "ok"})
+
 # ---------------------------------------------------------------------------
 # Shared enums / models
 # ---------------------------------------------------------------------------

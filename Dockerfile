@@ -15,6 +15,6 @@ ENV MCP_PORT=8000
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=15s \
-  CMD curl -f http://127.0.0.1:8000/mcp || exit 1
+  CMD curl -f http://127.0.0.1:8000/health || exit 1
 
 CMD ["python", "-m", "src.server"]
