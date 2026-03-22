@@ -13,13 +13,14 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 from src.client import (
     api_request,
-    handle_api_error,
     format_task_markdown,
     format_project_markdown,
 )
+from src.exceptions import TodoistAPIError
 
 # ---------------------------------------------------------------------------
 # Server
@@ -281,8 +282,8 @@ async def todoist_list_tasks(params: TodoistListTasksInput) -> str:
             lines.append(format_task_markdown(t))
             lines.append("")
         return "\n".join(lines)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -296,8 +297,8 @@ async def todoist_get_task(params: TodoistGetTaskInput) -> str:
         if params.response_format == ResponseFormat.JSON:
             return json.dumps(task, indent=2)
         return format_task_markdown(task)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -325,8 +326,8 @@ async def todoist_create_task(params: TodoistCreateTaskInput) -> str:
 
         task = await api_request("tasks", method="POST", body=body)
         return f"Task created successfully!\n\n{format_task_markdown(task)}"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -350,12 +351,12 @@ async def todoist_update_task(params: TodoistUpdateTaskInput) -> str:
             body["duration_unit"] = params.duration_unit or "minute"
 
         if not body:
-            return "Error: No fields provided to update."
+            raise ToolError("No fields provided to update.")
 
         task = await api_request(f"tasks/{params.task_id}", method="POST", body=body)
         return f"Task updated.\n\n{format_task_markdown(task)}"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -367,8 +368,8 @@ async def todoist_close_task(params: TodoistCloseTaskInput) -> str:
     try:
         await api_request(f"tasks/{params.task_id}/close", method="POST")
         return f"Task `{params.task_id}` marked complete."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -380,8 +381,8 @@ async def todoist_reopen_task(params: TodoistReopenTaskInput) -> str:
     try:
         await api_request(f"tasks/{params.task_id}/reopen", method="POST")
         return f"Task `{params.task_id}` reopened."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -393,8 +394,8 @@ async def todoist_delete_task(params: TodoistDeleteTaskInput) -> str:
     try:
         await api_request(f"tasks/{params.task_id}", method="DELETE")
         return f"Task `{params.task_id}` permanently deleted."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 # ---------- PROJECTS -------------------------------------------------------
@@ -415,8 +416,8 @@ async def todoist_list_projects(params: TodoistListProjectsInput) -> str:
             lines.append(format_project_markdown(p))
             lines.append("")
         return "\n".join(lines)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -430,8 +431,8 @@ async def todoist_get_project(params: TodoistGetProjectInput) -> str:
         if params.response_format == ResponseFormat.JSON:
             return json.dumps(project, indent=2)
         return format_project_markdown(project)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -448,8 +449,8 @@ async def todoist_create_project(params: TodoistCreateProjectInput) -> str:
                 body[field] = val
         project = await api_request("projects", method="POST", body=body)
         return f"Project created!\n\n{format_project_markdown(project)}"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -465,11 +466,11 @@ async def todoist_update_project(params: TodoistUpdateProjectInput) -> str:
             if val is not None:
                 body[field] = val
         if not body:
-            return "Error: No fields provided to update."
+            raise ToolError("No fields provided to update.")
         project = await api_request(f"projects/{params.project_id}", method="POST", body=body)
         return f"Project updated.\n\n{format_project_markdown(project)}"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -481,8 +482,8 @@ async def todoist_delete_project(params: TodoistDeleteProjectInput) -> str:
     try:
         await api_request(f"projects/{params.project_id}", method="DELETE")
         return f"Project `{params.project_id}` permanently deleted."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 # ---------- SECTIONS -------------------------------------------------------
@@ -508,8 +509,8 @@ async def todoist_list_sections(params: TodoistListSectionsInput) -> str:
             lines.append(f"- **Order**: {s.get('order', 'N/A')}")
             lines.append("")
         return "\n".join(lines)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -524,8 +525,8 @@ async def todoist_create_section(params: TodoistCreateSectionInput) -> str:
             body["order"] = params.order
         section = await api_request("sections", method="POST", body=body)
         return f"Section created: **{section['name']}** (ID: `{section['id']}`)"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -539,8 +540,8 @@ async def todoist_update_section(params: TodoistUpdateSectionInput) -> str:
             f"sections/{params.section_id}", method="POST", body={"name": params.name}
         )
         return f"Section updated: **{section['name']}** (ID: `{section['id']}`)"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -552,8 +553,8 @@ async def todoist_delete_section(params: TodoistDeleteSectionInput) -> str:
     try:
         await api_request(f"sections/{params.section_id}", method="DELETE")
         return f"Section `{params.section_id}` deleted."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 # ---------- COMMENTS -------------------------------------------------------
@@ -585,8 +586,8 @@ async def todoist_list_comments(params: TodoistListCommentsInput) -> str:
             lines.append(c["content"])
             lines.append("")
         return "\n".join(lines)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -603,8 +604,8 @@ async def todoist_create_comment(params: TodoistCreateCommentInput) -> str:
             body["project_id"] = params.project_id
         comment = await api_request("comments", method="POST", body=body)
         return f"Comment added (ID: `{comment['id']}`)."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -618,8 +619,8 @@ async def todoist_update_comment(params: TodoistUpdateCommentInput) -> str:
             f"comments/{params.comment_id}", method="POST", body={"content": params.content}
         )
         return f"Comment `{comment['id']}` updated."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -631,8 +632,8 @@ async def todoist_delete_comment(params: TodoistDeleteCommentInput) -> str:
     try:
         await api_request(f"comments/{params.comment_id}", method="DELETE")
         return f"Comment `{params.comment_id}` deleted."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 # ---------- LABELS ---------------------------------------------------------
@@ -656,8 +657,8 @@ async def todoist_list_labels(params: TodoistListLabelsInput) -> str:
             fav = " ⭐" if l.get("is_favorite") else ""
             lines.append(f"- **{l['name']}**{fav} — ID: `{l['id']}`, color: {l.get('color', 'default')}")
         return "\n".join(lines)
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -674,8 +675,8 @@ async def todoist_create_label(params: TodoistCreateLabelInput) -> str:
                 body[field] = val
         label = await api_request("labels", method="POST", body=body)
         return f"Label created: **{label['name']}** (ID: `{label['id']}`)"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -691,11 +692,11 @@ async def todoist_update_label(params: TodoistUpdateLabelInput) -> str:
             if val is not None:
                 body[field] = val
         if not body:
-            return "Error: No fields provided to update."
+            raise ToolError("No fields provided to update.")
         label = await api_request(f"labels/{params.label_id}", method="POST", body=body)
         return f"Label updated: **{label['name']}** (ID: `{label['id']}`)"
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
@@ -707,8 +708,8 @@ async def todoist_delete_label(params: TodoistDeleteLabelInput) -> str:
     try:
         await api_request(f"labels/{params.label_id}", method="DELETE")
         return f"Label `{params.label_id}` deleted."
-    except Exception as e:
-        return handle_api_error(e)
+    except TodoistAPIError as e:
+        raise ToolError(str(e)) from e
 
 
 # ===========================================================================
