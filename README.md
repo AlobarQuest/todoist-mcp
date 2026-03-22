@@ -1,3 +1,7 @@
+> **⚠️ ARCHIVED**: This project has been retired and is no longer maintained.
+> Reason: Replaced by the official Todoist MCP plugin in the Claude connector registry.
+> Retired: 2026-03-22
+
 # Todoist MCP Server
 
 MCP server that connects Claude Desktop, Cowork, and Claude Code to your Todoist account. Full CRUD for tasks, projects, sections, comments, and labels.
