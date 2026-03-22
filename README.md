@@ -45,6 +45,19 @@ export TODOIST_API_TOKEN="your_token_here"
 python -m src.server
 ```
 
+## Local Development
+
+### Run Tests
+```bash
+pip install -r requirements.txt
+python -m pytest tests/ -v
+```
+
+### Lint
+```bash
+ruff check src/ tests/
+```
+
 ## Claude Desktop Configuration
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -122,13 +135,29 @@ However, since we use GHCR image pulls (not source build), the CI/CD follows the
 - **Image:** `ghcr.io/alobarquest/todoist-mcp:latest`
 - **Port:** 8000
 - **Domain:** `todoist-mcp.devonwatkins.com`
-- **Health check:** `http://127.0.0.1:8000/mcp`
+- **Health check:** `http://127.0.0.1:8000/health/ready`
 - **Environment:** `TODOIST_API_TOKEN` from BWS
 
 ### GitHub Repo Secrets
 
 - `COOLIFY_WEBHOOK_URL` — Coolify deploy webhook for this resource
 - `COOLIFY_API_TOKEN` — Coolify API bearer token
+
+## Health Checks
+
+Two endpoints are available for health monitoring:
+
+- **`/health/live`** — Liveness check. Always returns 200 OK. Use to verify the server is running.
+- **`/health/ready`** — Readiness check. Returns 200 OK if `TODOIST_API_TOKEN` is set, 503 Service Unavailable otherwise. Use in Coolify health check configuration.
+
+## CI/CD
+
+All commits to `main` are validated by GitHub Actions before deployment:
+
+- **Lint:** `ruff check src/ tests/` — code formatting and style
+- **Tests:** `python -m pytest tests/ -v` — all tests must pass
+
+The build-and-push job only runs after the validate job passes. PRs are also validated before merging.
 
 ## Rate Limits
 
