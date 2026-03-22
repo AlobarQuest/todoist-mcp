@@ -1,10 +1,16 @@
 """Todoist API client with shared utilities."""
 
 import os
-import json
 from typing import Any, Optional
 
 import httpx
+
+from src.exceptions import (
+    TodoistConfigError,
+    TodoistAPIError,
+    TodoistRateLimitError,
+    TodoistTransientError,
+)
 
 API_BASE_URL = "https://api.todoist.com/api/v1"
 REQUEST_TIMEOUT = 30.0
@@ -14,7 +20,7 @@ def _get_token() -> str:
     """Retrieve Todoist API token from environment."""
     token = os.environ.get("TODOIST_API_TOKEN")
     if not token:
-        raise RuntimeError(
+        raise TodoistConfigError(
             "TODOIST_API_TOKEN environment variable is not set. "
             "Get your token from Todoist → Settings → Integrations → Developer."
         )
@@ -35,7 +41,7 @@ async def api_request(
     params: Optional[dict[str, Any]] = None,
     body: Optional[dict[str, Any]] = None,
 ) -> Any:
-    """Make an authenticated request to the Todoist REST API v2.
+    """Make an authenticated request to the Todoist REST API v1.
 
     Args:
         endpoint: API path relative to base URL (e.g. 'tasks', 'projects/123')
@@ -47,51 +53,52 @@ async def api_request(
         Parsed JSON response, or None for 204 No Content.
 
     Raises:
-        httpx.HTTPStatusError on non-2xx responses.
+        TodoistConfigError: if TODOIST_API_TOKEN is not set.
+        TodoistAPIError: on 4xx responses (except 429).
+        TodoistRateLimitError: on 429 responses.
+        TodoistTransientError: on 5xx responses or transport errors.
     """
     url = f"{API_BASE_URL}/{endpoint}"
     # Strip None values from params
     if params:
         params = {k: v for k, v in params.items() if v is not None}
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        response = await client.request(
-            method,
-            url,
-            headers=_headers(),
-            params=params if method == "GET" else None,
-            json=body if method in ("POST", "PUT") else None,
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.request(
+                method,
+                url,
+                headers=_headers(),
+                params=params if method == "GET" else None,
+                json=body if method in ("POST", "PUT") else None,
+            )
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:
+        raise TodoistTransientError(str(exc), cause=exc) from exc
+
+    if response.status_code == 204:
+        return None
+
+    if response.status_code == 429:
+        raise TodoistRateLimitError()
+
+    if response.status_code >= 500:
+        raise TodoistTransientError(
+            f"Todoist returned {response.status_code}"
         )
-        response.raise_for_status()
-        if response.status_code == 204:
-            return None
-        data = response.json()
-        # API v1 wraps list responses in {"results": [...], "next_cursor": ...}
-        if isinstance(data, dict) and "results" in data and "next_cursor" in data:
-            return data["results"]
-        return data
 
+    if response.status_code >= 400:
+        detail = ""
+        try:
+            detail = response.json().get("error", response.text)
+        except Exception:
+            detail = response.text
+        raise TodoistAPIError(response.status_code, detail)
 
-def handle_api_error(e: Exception) -> str:
-    """Format API errors into actionable messages."""
-    if isinstance(e, httpx.HTTPStatusError):
-        status = e.response.status_code
-        if status == 400:
-            return "Error: Bad request. Check your parameters are valid."
-        if status == 401:
-            return "Error: Invalid API token. Check TODOIST_API_TOKEN is correct."
-        if status == 403:
-            return "Error: Forbidden. You don't have access to this resource."
-        if status == 404:
-            return "Error: Resource not found. Check the ID is correct."
-        if status == 429:
-            return "Error: Rate limited. Todoist allows 1000 requests per 15 minutes. Wait and retry."
-        return f"Error: API returned status {status}."
-    if isinstance(e, httpx.TimeoutException):
-        return "Error: Request timed out. Try again."
-    if isinstance(e, RuntimeError) and "TODOIST_API_TOKEN" in str(e):
-        return str(e)
-    return f"Error: {type(e).__name__}: {e}"
+    data = response.json()
+    # API v1 wraps list responses in {"results": [...], "next_cursor": ...}
+    if isinstance(data, dict) and "results" in data and "next_cursor" in data:
+        return data["results"]
+    return data
 
 
 def format_task_markdown(task: dict) -> str:

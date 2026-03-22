@@ -14,8 +14,10 @@ async def reset_shared_client():
     """Reset the shared httpx client before each test so respx can intercept.
     Also clean up after each test."""
     import src.client
-    src.client._shared_client = None
+    if hasattr(src.client, '_shared_client'):
+        src.client._shared_client = None
     yield
     if hasattr(src.client, 'close_client'):
         await src.client.close_client()
-    src.client._shared_client = None
+    if hasattr(src.client, '_shared_client'):
+        src.client._shared_client = None
