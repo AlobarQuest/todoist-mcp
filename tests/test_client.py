@@ -103,3 +103,40 @@ async def test_api_request_404_raises_api_error():
     with pytest.raises(TodoistAPIError) as exc_info:
         await api_request("tasks/bad-id")
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_auto_pagination_follows_cursor():
+    """api_request auto-pages through cursor-based responses."""
+    respx.get(f"{API_BASE_URL}/tasks").mock(
+        side_effect=[
+            httpx.Response(200, json={
+                "results": [{"id": "1"}],
+                "next_cursor": "cursor-abc",
+            }),
+            httpx.Response(200, json={
+                "results": [{"id": "2"}],
+                "next_cursor": None,
+            }),
+        ]
+    )
+    result = await api_request("tasks")
+    assert result == [{"id": "1"}, {"id": "2"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_auto_pagination_caps_at_max_pages():
+    """Auto-pagination stops at the safety cap (20 pages)."""
+    responses = [
+        httpx.Response(200, json={
+            "results": [{"id": str(i)}],
+            "next_cursor": f"cursor-{i+1}",
+        })
+        for i in range(25)
+    ]
+    respx.get(f"{API_BASE_URL}/tasks").mock(side_effect=responses)
+    result = await api_request("tasks")
+    # Should stop at MAX_PAGES (20), not exhaust all 25
+    assert len(result) == 20

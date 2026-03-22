@@ -14,6 +14,7 @@ from src.exceptions import (
 
 API_BASE_URL = "https://api.todoist.com/api/v1"
 REQUEST_TIMEOUT = 30.0
+MAX_PAGES = 20
 
 
 def _get_token() -> str:
@@ -35,34 +36,21 @@ def _headers() -> dict[str, str]:
     }
 
 
-async def api_request(
-    endpoint: str,
-    method: str = "GET",
+async def _do_request(
+    method: str,
+    url: str,
     params: Optional[dict[str, Any]] = None,
     body: Optional[dict[str, Any]] = None,
-) -> Any:
-    """Make an authenticated request to the Todoist REST API v1.
+) -> httpx.Response:
+    """Execute a single HTTP request with error handling.
 
-    Args:
-        endpoint: API path relative to base URL (e.g. 'tasks', 'projects/123')
-        method: HTTP method
-        params: Query parameters
-        body: JSON request body (for POST/PUT)
-
-    Returns:
-        Parsed JSON response, or None for 204 No Content.
+    Returns the response object for 2xx status codes.
 
     Raises:
-        TodoistConfigError: if TODOIST_API_TOKEN is not set.
-        TodoistAPIError: on 4xx responses (except 429).
+        TodoistTransientError: on transport errors or 5xx responses.
         TodoistRateLimitError: on 429 responses.
-        TodoistTransientError: on 5xx responses or transport errors.
+        TodoistAPIError: on 4xx responses (except 429).
     """
-    url = f"{API_BASE_URL}/{endpoint}"
-    # Strip None values from params
-    if params:
-        params = {k: v for k, v in params.items() if v is not None}
-
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             response = await client.request(
@@ -74,9 +62,6 @@ async def api_request(
             )
     except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:
         raise TodoistTransientError(str(exc), cause=exc) from exc
-
-    if response.status_code == 204:
-        return None
 
     if response.status_code == 429:
         raise TodoistRateLimitError()
@@ -94,11 +79,66 @@ async def api_request(
             detail = response.text
         raise TodoistAPIError(response.status_code, detail)
 
-    data = response.json()
-    # API v1 wraps list responses in {"results": [...], "next_cursor": ...}
-    if isinstance(data, dict) and "results" in data and "next_cursor" in data:
-        return data["results"]
-    return data
+    return response
+
+
+async def api_request(
+    endpoint: str,
+    method: str = "GET",
+    params: Optional[dict[str, Any]] = None,
+    body: Optional[dict[str, Any]] = None,
+) -> Any:
+    """Make an authenticated request to the Todoist REST API v1.
+
+    For GET requests, automatically follows cursor-based pagination up to
+    MAX_PAGES. Non-GET requests are executed as a single call.
+
+    Args:
+        endpoint: API path relative to base URL (e.g. 'tasks', 'projects/123')
+        method: HTTP method
+        params: Query parameters
+        body: JSON request body (for POST/PUT)
+
+    Returns:
+        Parsed JSON response, or None for 204 No Content.
+        For paginated list endpoints, returns the accumulated results list.
+
+    Raises:
+        TodoistConfigError: if TODOIST_API_TOKEN is not set.
+        TodoistAPIError: on 4xx responses (except 429).
+        TodoistRateLimitError: on 429 responses.
+        TodoistTransientError: on 5xx responses or transport errors.
+    """
+    url = f"{API_BASE_URL}/{endpoint}"
+    # Strip None values from params
+    if params:
+        params = {k: v for k, v in params.items() if v is not None}
+
+    # Non-GET: single request, no pagination
+    if method != "GET":
+        response = await _do_request(method, url, params=None, body=body)
+        if response.status_code == 204:
+            return None
+        return response.json()
+
+    # GET: may need pagination
+    all_results: list[Any] = []
+    current_params = dict(params) if params else {}
+
+    for _ in range(MAX_PAGES):
+        response = await _do_request("GET", url, params=current_params)
+        data = response.json()
+
+        if isinstance(data, dict) and "results" in data and "next_cursor" in data:
+            all_results.extend(data["results"])
+            if not data["next_cursor"]:
+                break
+            current_params["cursor"] = data["next_cursor"]
+        else:
+            # Non-paginated response — return as-is
+            return data
+
+    return all_results
 
 
 def format_task_markdown(task: dict) -> str:
