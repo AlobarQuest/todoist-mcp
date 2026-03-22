@@ -8,10 +8,10 @@ Claude Code, and any MCP-compatible client.
 
 import json
 import os
-from typing import Optional, List
+from typing import Literal, Optional, List
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
@@ -86,7 +86,14 @@ class TodoistCreateTaskInput(BaseModel):
     due_lang: Optional[str] = Field(default="en", description="Language for due_string parsing")
     assignee_id: Optional[str] = Field(default=None, description="User ID to assign task to (shared projects)")
     duration: Optional[int] = Field(default=None, description="Estimated duration in minutes", ge=1)
-    duration_unit: Optional[str] = Field(default="minute", description="Duration unit: 'minute' or 'day'")
+    duration_unit: Optional[Literal["minute", "day"]] = Field(default="minute", description="Duration unit: 'minute' or 'day'")
+
+    @model_validator(mode="after")
+    def check_due_date_exclusivity(self):
+        due_fields = [f for f in ("due_string", "due_date", "due_datetime") if getattr(self, f) is not None]
+        if len(due_fields) > 1:
+            raise ValueError(f"Only one of due_string, due_date, due_datetime allowed. Got: {', '.join(due_fields)}")
+        return self
 
 
 class TodoistUpdateTaskInput(BaseModel):
@@ -104,7 +111,14 @@ class TodoistUpdateTaskInput(BaseModel):
     due_lang: Optional[str] = Field(default=None)
     assignee_id: Optional[str] = Field(default=None)
     duration: Optional[int] = Field(default=None, ge=1)
-    duration_unit: Optional[str] = Field(default=None)
+    duration_unit: Optional[Literal["minute", "day"]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def check_due_date_exclusivity(self):
+        due_fields = [f for f in ("due_string", "due_date", "due_datetime") if getattr(self, f) is not None]
+        if len(due_fields) > 1:
+            raise ValueError(f"Only one of due_string, due_date, due_datetime allowed. Got: {', '.join(due_fields)}")
+        return self
 
 
 class TodoistCloseTaskInput(BaseModel):
@@ -183,13 +197,13 @@ class TodoistListCommentsInput(BaseModel):
     project_id: Optional[str] = Field(default=None, description="Project ID")
     response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN)
 
-    @field_validator("project_id")
-    @classmethod
-    def check_one_id(cls, v: Optional[str], info) -> Optional[str]:
-        task_id = info.data.get("task_id")
-        if not v and not task_id:
-            raise ValueError("Provide either task_id or project_id")
-        return v
+    @model_validator(mode="after")
+    def check_exactly_one_id(self):
+        has_task = self.task_id is not None
+        has_project = self.project_id is not None
+        if has_task == has_project:  # both True or both False
+            raise ValueError("Provide exactly one of task_id or project_id, not both or neither.")
+        return self
 
 
 class TodoistCreateCommentInput(BaseModel):
@@ -197,13 +211,13 @@ class TodoistCreateCommentInput(BaseModel):
     task_id: Optional[str] = Field(default=None, description="Task to comment on")
     project_id: Optional[str] = Field(default=None, description="Project to comment on")
 
-    @field_validator("project_id")
-    @classmethod
-    def check_one_id(cls, v: Optional[str], info) -> Optional[str]:
-        task_id = info.data.get("task_id")
-        if not v and not task_id:
-            raise ValueError("Provide either task_id or project_id")
-        return v
+    @model_validator(mode="after")
+    def check_exactly_one_id(self):
+        has_task = self.task_id is not None
+        has_project = self.project_id is not None
+        if has_task == has_project:  # both True or both False
+            raise ValueError("Provide exactly one of task_id or project_id, not both or neither.")
+        return self
 
 
 class TodoistUpdateCommentInput(BaseModel):
