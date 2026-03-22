@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import httpx
 
-API_BASE_URL = "https://api.todoist.com/rest/v2"
+API_BASE_URL = "https://api.todoist.com/api/v1"
 REQUEST_TIMEOUT = 30.0
 
 
@@ -65,7 +65,11 @@ async def api_request(
         response.raise_for_status()
         if response.status_code == 204:
             return None
-        return response.json()
+        data = response.json()
+        # API v1 wraps list responses in {"results": [...], "next_cursor": ...}
+        if isinstance(data, dict) and "results" in data and "next_cursor" in data:
+            return data["results"]
+        return data
 
 
 def handle_api_error(e: Exception) -> str:
@@ -96,7 +100,7 @@ def format_task_markdown(task: dict) -> str:
     priority_map = {1: "⬜ Normal", 2: "🔵 Medium", 3: "🟠 High", 4: "🔴 Urgent"}
     priority = priority_map.get(task.get("priority", 1), "Normal")
 
-    status = "✅" if task.get("is_completed") else "⬜"
+    status = "✅" if task.get("checked") or task.get("is_completed") else "⬜"
     lines.append(f"### {status} {task['content']}")
     if task.get("description"):
         lines.append(f"_{task['description']}_")
@@ -125,8 +129,9 @@ def format_project_markdown(project: dict) -> str:
     lines = []
     lines.append(f"### {project['name']}")
     lines.append(f"- **ID**: `{project['id']}`")
-    if project.get("comment_count"):
-        lines.append(f"- **Comments**: {project['comment_count']}")
+    comment_count = project.get("comment_count") or project.get("note_count")
+    if comment_count:
+        lines.append(f"- **Comments**: {comment_count}")
     if project.get("color"):
         lines.append(f"- **Color**: {project['color']}")
     lines.append(f"- **Shared**: {'Yes' if project.get('is_shared') else 'No'}")

@@ -2,7 +2,7 @@
 """
 Todoist MCP Server — Full CRUD for Tasks, Projects, Sections, Comments, and Labels.
 
-Exposes the Todoist REST API v2 as MCP tools for use with Claude Desktop,
+Exposes the Todoist API v1 as MCP tools for use with Claude Desktop,
 Claude Code, and any MCP-compatible client.
 """
 
