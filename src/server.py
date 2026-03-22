@@ -15,8 +15,11 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
+from contextlib import asynccontextmanager
+
 from src.client import (
     api_request,
+    close_client,
     format_task_markdown,
     format_project_markdown,
 )
@@ -26,10 +29,16 @@ from src.exceptions import TodoistAPIError
 # Server
 # ---------------------------------------------------------------------------
 
+@asynccontextmanager
+async def lifespan(server):
+    yield
+    await close_client()
+
 mcp = FastMCP(
     "todoist_mcp",
     host=os.environ.get("MCP_HOST", "0.0.0.0"),
     port=int(os.environ.get("MCP_PORT", "8000")),
+    lifespan=lifespan,
 )
 
 @mcp.custom_route("/health", methods=["GET"])

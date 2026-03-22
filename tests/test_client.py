@@ -71,13 +71,8 @@ async def test_api_request_429_raises_rate_limit_error():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_api_request_500_raises_transient_error():
-    """5xx raises TodoistTransientError.
-    NOTE: This test will be updated in Task 6 when retry logic is added.
-    After Task 6, a single 502 will be retried before raising.
-    The test_retry_exhaustion_raises_transient test in Task 6 covers
-    the equivalent behavior (502 after all retries exhausted).
-    """
+async def test_api_request_500_raises_transient_after_retries():
+    """5xx raises TodoistTransientError after exhausting retries."""
     respx.get(f"{API_BASE_URL}/tasks").mock(
         return_value=httpx.Response(502, json={"error": "Bad gateway"})
     )
@@ -140,3 +135,28 @@ async def test_auto_pagination_caps_at_max_pages():
     result = await api_request("tasks")
     # Should stop at MAX_PAGES (20), not exhaust all 25
     assert len(result) == 20
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retry_on_transient_then_success():
+    """Retries on 502 and succeeds on second attempt."""
+    respx.get(f"{API_BASE_URL}/tasks").mock(
+        side_effect=[
+            httpx.Response(502, text="Bad Gateway"),
+            httpx.Response(200, json=[{"id": "1"}]),
+        ]
+    )
+    result = await api_request("tasks")
+    assert result == [{"id": "1"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retry_exhaustion_raises_transient():
+    """After max retries, raises TodoistTransientError."""
+    respx.get(f"{API_BASE_URL}/tasks").mock(
+        return_value=httpx.Response(502, text="Bad Gateway")
+    )
+    with pytest.raises(TodoistTransientError):
+        await api_request("tasks")

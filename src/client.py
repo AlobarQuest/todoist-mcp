@@ -1,5 +1,6 @@
 """Todoist API client with shared utilities."""
 
+import asyncio
 import os
 from typing import Any, Optional
 
@@ -14,7 +15,28 @@ from src.exceptions import (
 
 API_BASE_URL = "https://api.todoist.com/api/v1"
 REQUEST_TIMEOUT = 30.0
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 0.5  # seconds — 0.5, 1.0, 2.0
 MAX_PAGES = 20
+
+# Module-level shared client
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return a shared httpx.AsyncClient, creating it on first use."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    return _shared_client
+
+
+async def close_client() -> None:
+    """Close the shared client. Call on shutdown."""
+    global _shared_client
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+        _shared_client = None
 
 
 def _get_token() -> str:
@@ -42,17 +64,21 @@ async def _do_request(
     params: Optional[dict[str, Any]] = None,
     body: Optional[dict[str, Any]] = None,
 ) -> httpx.Response:
-    """Execute a single HTTP request with error handling.
+    """Execute a single HTTP request with retries for transient failures.
 
-    Returns the response object for 2xx status codes.
+    Retries on:
+    - Transport errors (timeout, connect, read)
+    - 5xx responses
 
-    Raises:
-        TodoistTransientError: on transport errors or 5xx responses.
-        TodoistRateLimitError: on 429 responses.
-        TodoistAPIError: on 4xx responses (except 429).
+    Does NOT retry:
+    - 4xx responses (client errors)
+    - 429 responses (rate limit — raised immediately)
     """
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+    client = _get_client()
+    last_error: Exception | None = None
+
+    for attempt in range(MAX_RETRIES):
+        try:
             response = await client.request(
                 method,
                 url,
@@ -60,26 +86,37 @@ async def _do_request(
                 params=params if method == "GET" else None,
                 json=body if method in ("POST", "PUT") else None,
             )
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:
-        raise TodoistTransientError(str(exc), cause=exc) from exc
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:
+            last_error = exc
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                continue
+            raise TodoistTransientError(str(exc), cause=exc) from exc
 
-    if response.status_code == 429:
-        raise TodoistRateLimitError()
+        if response.status_code == 429:
+            raise TodoistRateLimitError()
 
-    if response.status_code >= 500:
-        raise TodoistTransientError(
-            f"Todoist returned {response.status_code}"
-        )
+        if response.status_code >= 500:
+            last_error = TodoistTransientError(f"Todoist returned {response.status_code}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                continue
+            raise last_error
 
-    if response.status_code >= 400:
-        detail = ""
-        try:
-            detail = response.json().get("error", response.text)
-        except Exception:
-            detail = response.text
-        raise TodoistAPIError(response.status_code, detail)
+        if response.status_code >= 400:
+            detail = ""
+            try:
+                detail = response.json().get("error", response.text)
+            except Exception:
+                detail = response.text
+            raise TodoistAPIError(response.status_code, detail)
 
-    return response
+        return response
+
+    # Should not reach here, but safety net
+    raise TodoistTransientError(
+        str(last_error) if last_error else "Request failed after retries"
+    )
 
 
 async def api_request(
