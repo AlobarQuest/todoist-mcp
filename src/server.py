@@ -689,9 +689,9 @@ async def todoist_list_labels(params: TodoistListLabelsInput) -> str:
             return "No labels found."
 
         lines = [f"# Labels ({len(labels)})", ""]
-        for l in labels:
-            fav = " ⭐" if l.get("is_favorite") else ""
-            lines.append(f"- **{l['name']}**{fav} — ID: `{l['id']}`, color: {l.get('color', 'default')}")
+        for label in labels:
+            fav = " ⭐" if label.get("is_favorite") else ""
+            lines.append(f"- **{label['name']}**{fav} — ID: `{label['id']}`, color: {label.get('color', 'default')}")
         return "\n".join(lines)
     except TodoistAPIError as e:
         raise ToolError(str(e)) from e

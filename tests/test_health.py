@@ -1,6 +1,5 @@
 """Tests for health and readiness endpoints."""
 
-import pytest
 from starlette.testclient import TestClient
 
 
