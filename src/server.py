@@ -41,10 +41,23 @@ mcp = FastMCP(
     lifespan=lifespan,
 )
 
-@mcp.custom_route("/health", methods=["GET"])
-async def health(request):
+@mcp.custom_route("/health/live", methods=["GET"])
+async def health_live(request):
     from starlette.responses import JSONResponse
     return JSONResponse({"status": "ok"})
+
+
+@mcp.custom_route("/health/ready", methods=["GET"])
+async def health_ready(request):
+    import os
+    from starlette.responses import JSONResponse
+    token = os.environ.get("TODOIST_API_TOKEN")
+    if not token:
+        return JSONResponse(
+            {"status": "not ready", "error": "TODOIST_API_TOKEN is not set"},
+            status_code=503,
+        )
+    return JSONResponse({"status": "ready"})
 
 # ---------------------------------------------------------------------------
 # Shared enums / models
